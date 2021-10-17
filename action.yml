@@ -1,0 +1,52 @@
+# action.yml
+name: 'install-in-toto'
+description: 'Install in-toto and put it in your path'
+branding:
+  icon: 'package'
+  color: 'red'
+inputs:
+  in-toto-release:
+    description: 'In-toto release version to use in the actions.'
+    required: false
+    default: '0.3.0-alpha.7'
+runs:
+  using: 'composite'
+  steps:
+    # parts of this code are borrowed from the sigstore team :)
+    - run: |
+        trap "popd" EXIT
+        mkdir -p $HOME/.in-toto
+        mkdir -p $HOME/.cosign
+
+        pushd $HOME/.cosign
+        # Download cosign for in-toto signature validation
+        bootstrap_version='v1.2.1'
+        expected_bootstrap_version_digest='490cb1941aa317cd24a0bd9f2fe38932805dbaaba0ae89c12ec8138d15bdd8a0'
+        curl -L https://storage.googleapis.com/cosign-releases/${bootstrap_version}/cosign-linux-amd64 -o cosign
+        shaBootstrap=$(sha256sum  cosign | cut -d' ' -f1);
+        if [[ $shaBootstrap != ${expected_bootstrap_version_digest} ]]; then exit 1; fi
+        chmod +x  cosign
+        popd
+
+        # Verify in-toto semver without 'v'
+        semver='^([0-9]+\.){0,2}(\*|[0-9]+)[\.a-z0-9-]*$'
+        if [[ ${{ inputs.in-toto-release }} =~ $semver ]]; then
+          echo "INFO: Custom in-toto version ${{ inputs.in-toto-release }}"
+        else
+          echo "ERROR: Unable to validate in-toto version: '${{ inputs.in-toto-release }}'"
+          exit 1
+        fi
+
+        # Download in-toto release
+        pushd $HOME/.in-toto
+        curl -L https://github.com/shibumi/in-toto-golang/releases/download/v${{ inputs.in-toto-release }}/in-toto_${{ inputs.in-toto-release }}_linux_amd64.tar.gz -O
+        curl -L https://github.com/shibumi/in-toto-golang/releases/download/v${{ inputs.in-toto-release }}/in-toto_${{ inputs.in-toto-release }}_linux_amd64.tar.gz.sig -O
+
+        # TODO: Signature validation with cosign
+
+        tar xfvz in-toto_${{ inputs.in-toto-release }}_linux_amd64.tar.gz
+        rm CHANGELOG.md LICENSE README.md
+        chmod +x in-toto
+      shell: bash
+    - run: echo "$HOME/.in-toto" >> $GITHUB_PATH
+      shell: bash
